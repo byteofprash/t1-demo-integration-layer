@@ -70,7 +70,7 @@ async function pollSource(s: Source, now: Date) {
   const to = new Date(now.getTime() - LAG_MS).toISOString();
   // Without a store there is no cursor: fetch a fixed lookback window each run (demo mode; gaps/duplicates possible).
   const stateful = storeConfigured();
-  const lookbackMs = Number(process.env.POLL_LOOKBACK_SECONDS ?? 300) * 1000;
+  const lookbackMs = Number(process.env.POLL_LOOKBACK_SECONDS ?? 3600) * 1000;
   const from = (stateful ? await getCursor(s.name) : null) ?? new Date(now.getTime() - LAG_MS - lookbackMs).toISOString();
   if (from >= to) return { source: s.name, sent: 0 };
 

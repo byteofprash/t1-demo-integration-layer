@@ -1,4 +1,4 @@
 {
-  "crons": [{ "path": "/api/cron/poll", "schedule": "*/5 * * * *" }],
+  "crons": [{ "path": "/api/cron/poll", "schedule": "0 * * * *" }],
   "functions": { "api/cron/poll.ts": { "maxDuration": 60 } }
 }

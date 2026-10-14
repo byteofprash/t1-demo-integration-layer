@@ -1,8 +1,12 @@
 import { createHmac } from "node:crypto";
 import type { Attrs } from "./newrelic";
 
+/** PII protection is off unless PII_PROTECTION=on (then ids are hashed and PII keys dropped). */
+const protect = () => (process.env.PII_PROTECTION ?? "off").toLowerCase() === "on";
+
 /** Keyed hash so ids are stable for correlation but not reversible without the salt. */
 export function hashId(value: unknown): string {
+  if (!protect()) return String(value);
   const salt = process.env.PII_HASH_SALT;
   if (!salt) throw new Error("PII_HASH_SALT must be set");
   return createHmac("sha256", salt).update(String(value)).digest("hex").slice(0, 32);
@@ -23,9 +27,9 @@ export function flatten(input: unknown, prefix = "", out: Attrs = {}, depth = 0)
   if (typeof input !== "object") {
     const key = prefix || "value";
     const last = key.split(".").pop()!.toLowerCase();
-    if (HASH_KEYS.has(last) || HASH_KEYS.has(key.toLowerCase())) {
+    if (protect() && (HASH_KEYS.has(last) || HASH_KEYS.has(key.toLowerCase()))) {
       out[key] = hashId(input);
-    } else if (DROP_KEY_RE.test(last)) {
+    } else if (protect() && DROP_KEY_RE.test(last)) {
       // PII: dropped
     } else if (typeof input === "string") {
       out[key] = input.length > 4000 ? input.slice(0, 4000) : input;

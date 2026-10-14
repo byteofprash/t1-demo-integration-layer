@@ -1,0 +1,29 @@
+import { env } from "./env";
+
+const MIN_INTERVAL_MS = 400; // stay under the documented 3 req/s limit
+let last = 0;
+
+async function throttle() {
+  const wait = last + MIN_INTERVAL_MS - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  last = Date.now();
+}
+
+export async function mgmtGet<T>(path: string, params: Record<string, string | number | undefined>): Promise<T> {
+  const url = new URL(path, env("TALON_BASE_URL"));
+  for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, String(v));
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await throttle();
+    const res = await fetch(url, {
+      headers: { Authorization: `ManagementKey-v1 ${env("TALON_MANAGEMENT_KEY")}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Talon.One ${path} -> ${res.status}`);
+    return (await res.json()) as T;
+  }
+  throw new Error(`Talon.One ${path} rate limited`);
+}

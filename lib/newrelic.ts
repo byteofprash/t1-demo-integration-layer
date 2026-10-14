@@ -1,6 +1,7 @@
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { env } from "./env.js";
+import { log } from "./log.js";
 
 const gzipAsync = promisify(gzip);
 const MAX_BYTES = 900_000; // NR limit is 1 MB (10^6) per POST, uncompressed-safe margin
@@ -37,7 +38,11 @@ async function post(url: string, body: unknown): Promise<void> {
         body: payload,
         signal: AbortSignal.timeout(10_000),
       });
-      if (res.ok) return;
+      if (res.ok) {
+        log("newrelic.ok", { url: url.replace(/accounts\/\d+/, "accounts/*"), status: res.status, attempt, bytes: payload.length });
+        return;
+      }
+      log("newrelic.http_error", { url: url.replace(/accounts\/\d+/, "accounts/*"), status: res.status, attempt });
       // 4xx other than 408/429 will not succeed on retry
       if (res.status < 500 && res.status !== 429 && res.status !== 408) {
         throw new Error(`New Relic rejected payload: ${res.status} ${await res.text()}`);
@@ -45,6 +50,7 @@ async function post(url: string, body: unknown): Promise<void> {
       lastErr = new Error(`New Relic ${res.status}`);
     } catch (e) {
       lastErr = e;
+      log("newrelic.fetch_error", { attempt, error: e instanceof Error ? e.message : String(e) });
       if (e instanceof Error && e.message.startsWith("New Relic rejected")) throw e;
     }
     await sleep(2 ** attempt * 250 + Math.random() * 100);

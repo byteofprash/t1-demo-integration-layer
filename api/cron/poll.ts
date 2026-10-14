@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { log } from "../../lib/log.js";
 import { getCursor, setCursor, storeConfigured } from "../../lib/cursor.js";
 import { sendLogs, type NrLog } from "../../lib/newrelic.js";
 import { mgmtGet } from "../../lib/talon.js";
@@ -72,6 +73,7 @@ async function pollSource(s: Source, now: Date) {
   const stateful = storeConfigured();
   const lookbackMs = Number(process.env.POLL_LOOKBACK_SECONDS ?? 3600) * 1000;
   const from = (stateful ? await getCursor(s.name) : null) ?? new Date(now.getTime() - LAG_MS - lookbackMs).toISOString();
+  log("poll.start", { source: s.name, from, to, stateful });
   if (from >= to) return { source: s.name, sent: 0 };
 
   let skip = 0;
@@ -95,6 +97,7 @@ async function pollSource(s: Source, now: Date) {
   // If we hit the page cap, resume from the newest row seen (at-least-once; a boundary row may repeat).
   // Otherwise the whole window was consumed.
   if (stateful) await setCursor(s.name, truncated ? newest : to);
+  log("poll.done", { source: s.name, sent, truncated });
   return { source: s.name, sent, truncated };
 }
 
@@ -102,6 +105,7 @@ export async function GET(request: Request): Promise<Response> {
   const expected = `Bearer ${process.env.CRON_SECRET ?? ""}`;
   const got = request.headers.get("authorization") ?? "";
   if (!process.env.CRON_SECRET || got.length !== expected.length || !timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
+    log("poll.rejected", { reason: "bad_or_missing_cron_secret" });
     return new Response("Unauthorized", { status: 401 });
   }
   const now = new Date();

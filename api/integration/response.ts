@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { firstSeen, unsee } from "../../lib/cursor.js";
+import { log } from "../../lib/log.js";
 import { safely, sendEvents, sendMetrics } from "../../lib/newrelic.js";
 import { hashId, summarizeIntegrationResponse } from "../../lib/transform.js";
 
@@ -24,6 +25,7 @@ const num = (v: string | null) => (v !== null && v !== "" && Number.isFinite(Num
 export async function POST(request: Request): Promise<Response> {
   const secret = process.env.WEBHOOK_SHARED_SECRET;
   if (!secret || !safeEqual(request.headers.get("x-webhook-secret") ?? "", secret)) {
+    log("integration.rejected", { reason: secret ? "bad_secret" : "server_secret_unset" });
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -31,6 +33,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     raw = await request.json();
   } catch {
+    log("integration.rejected", { reason: "invalid_json" });
     return new Response("Bad Request", { status: 400 });
   }
   const envelope = raw && typeof raw === "object" && "response" in raw;
@@ -45,7 +48,9 @@ export async function POST(request: Request): Promise<Response> {
   const sessionId = h.get("x-t1-session-id") ?? meta.sessionId ?? t1?.customerSession?.integrationId ?? t1?.customerSession?.id;
   const requestId = h.get("x-request-id") ?? meta.requestId;
 
+  log("integration.received", { envelope, route, method, status, durationMs, hasSession: Boolean(sessionId), requestId });
   if (requestId && !(await firstSeen(`api:${requestId}`))) {
+    log("integration.duplicate", { requestId });
     return Response.json({ status: "duplicate" });
   }
 
@@ -53,6 +58,7 @@ export async function POST(request: Request): Promise<Response> {
     safely("integration push", async () => {
       try {
         const summary = summarizeIntegrationResponse(t1);
+        log("integration.summary", { ...summary });
         const isError = status !== undefined ? status >= 400 : false;
         const now = Date.now();
         const attrs = { route, method, ...(status !== undefined ? { status } : {}) };

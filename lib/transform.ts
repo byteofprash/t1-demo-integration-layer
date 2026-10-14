@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import type { Attrs } from "./newrelic";
+import type { Attrs } from "./newrelic.js";
 
 /** PII protection is off unless PII_PROTECTION=on (then ids are hashed and PII keys dropped). */
 const protect = () => (process.env.PII_PROTECTION ?? "off").toLowerCase() === "on";

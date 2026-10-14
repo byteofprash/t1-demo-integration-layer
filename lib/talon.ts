@@ -1,4 +1,4 @@
-import { env } from "./env";
+import { env } from "./env.js";
 
 const MIN_INTERVAL_MS = 400; // stay under the documented 3 req/s limit
 let last = 0;

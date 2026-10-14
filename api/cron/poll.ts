@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
-import { getCursor, setCursor, storeConfigured } from "../../lib/cursor";
-import { sendLogs, type NrLog } from "../../lib/newrelic";
-import { mgmtGet } from "../../lib/talon";
-import { flatten } from "../../lib/transform";
+import { getCursor, setCursor, storeConfigured } from "../../lib/cursor.js";
+import { sendLogs, type NrLog } from "../../lib/newrelic.js";
+import { mgmtGet } from "../../lib/talon.js";
+import { flatten } from "../../lib/transform.js";
 
 const PAGE = 1000;
 const MAX_PAGES = 5; // per source per run, bounds duration and rate-limit use

@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
-import { firstSeen, unsee } from "./cursor";
-import { safely, sendEvents } from "./newrelic";
-import { flatten } from "./transform";
+import { firstSeen, unsee } from "./cursor.js";
+import { safely, sendEvents } from "./newrelic.js";
+import { flatten } from "./transform.js";
 
 function safeEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);

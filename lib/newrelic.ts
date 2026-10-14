@@ -1,6 +1,6 @@
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
-import { env } from "./env";
+import { env } from "./env.js";
 
 const gzipAsync = promisify(gzip);
 const MAX_BYTES = 900_000; // NR limit is 1 MB (10^6) per POST, uncompressed-safe margin

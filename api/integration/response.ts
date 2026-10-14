@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { firstSeen, unsee } from "../../lib/cursor.js";
+import { preflight, withCors } from "../../lib/cors.js";
 import { log } from "../../lib/log.js";
 import { safely, sendEvents, sendMetrics } from "../../lib/newrelic.js";
 import { hashId, summarizeIntegrationResponse } from "../../lib/transform.js";
@@ -22,7 +23,7 @@ const num = (v: string | null) => (v !== null && v !== "" && Number.isFinite(Num
  *   X-T1-Route, X-T1-Method, X-T1-Status, X-T1-Duration-Ms, X-T1-Session-Id, X-Request-Id (dedupe)
  * Auth: X-Webhook-Secret = WEBHOOK_SHARED_SECRET.
  */
-export async function POST(request: Request): Promise<Response> {
+async function handle(request: Request): Promise<Response> {
   const secret = process.env.WEBHOOK_SHARED_SECRET;
   if (!secret || !safeEqual(request.headers.get("x-webhook-secret") ?? "", secret)) {
     log("integration.rejected", { reason: secret ? "bad_secret" : "server_secret_unset" });
@@ -94,3 +95,6 @@ export async function POST(request: Request): Promise<Response> {
   );
   return Response.json({ status: "accepted" }, { status: 202 });
 }
+
+export const POST = async (request: Request) => withCors(await handle(request));
+export const OPTIONS = () => preflight();

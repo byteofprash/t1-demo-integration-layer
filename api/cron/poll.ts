@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { getCursor, setCursor } from "../../lib/cursor";
+import { getCursor, setCursor, storeConfigured } from "../../lib/cursor";
 import { sendLogs, type NrLog } from "../../lib/newrelic";
 import { mgmtGet } from "../../lib/talon";
 import { flatten } from "../../lib/transform";
@@ -101,6 +101,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!process.env.CRON_SECRET || got.length !== expected.length || !timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
     return new Response("Unauthorized", { status: 401 });
   }
+  if (!storeConfigured()) return new Response("Poller needs a Redis store (KV_REST_API_URL/TOKEN)", { status: 503 });
   const now = new Date();
   const results: unknown[] = [];
   for (const s of sources()) {

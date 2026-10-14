@@ -68,7 +68,10 @@ async function pageMessageLogs(from: string, to: string, skip: number): Promise<
 
 async function pollSource(s: Source, now: Date) {
   const to = new Date(now.getTime() - LAG_MS).toISOString();
-  const from = (await getCursor(s.name)) ?? new Date(now.getTime() - 15 * 60_000).toISOString();
+  // Without a store there is no cursor: fetch a fixed lookback window each run (demo mode; gaps/duplicates possible).
+  const stateful = storeConfigured();
+  const lookbackMs = Number(process.env.POLL_LOOKBACK_SECONDS ?? 300) * 1000;
+  const from = (stateful ? await getCursor(s.name) : null) ?? new Date(now.getTime() - LAG_MS - lookbackMs).toISOString();
   if (from >= to) return { source: s.name, sent: 0 };
 
   let skip = 0;
@@ -91,7 +94,7 @@ async function pollSource(s: Source, now: Date) {
   }
   // If we hit the page cap, resume from the newest row seen (at-least-once; a boundary row may repeat).
   // Otherwise the whole window was consumed.
-  await setCursor(s.name, truncated ? newest : to);
+  if (stateful) await setCursor(s.name, truncated ? newest : to);
   return { source: s.name, sent, truncated };
 }
 
@@ -101,7 +104,6 @@ export async function GET(request: Request): Promise<Response> {
   if (!process.env.CRON_SECRET || got.length !== expected.length || !timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
     return new Response("Unauthorized", { status: 401 });
   }
-  if (!storeConfigured()) return new Response("Poller needs a Redis store (KV_REST_API_URL/TOKEN)", { status: 503 });
   const now = new Date();
   const results: unknown[] = [];
   for (const s of sources()) {

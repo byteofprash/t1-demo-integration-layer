@@ -13,5 +13,5 @@ Not confirmed:
 - Vercel plan limits: Hobby crons run at most daily. */5 needs Pro. Verify before deploying; else move poller to Cloud Run.
 - Integration receiver: the middleware payload shape is my proposal (raw T1 response or envelope; metadata via X-T1-* headers). Session id fallback `customerSession.integrationId` is unconfirmed.
 - PII protection is OFF by default (PII_PROTECTION=on enables hashing/dropping, which then requires PII_HASH_SALT). Raw ids/emails/names reach New Relic.
-- Dedupe is skipped (duplicates accepted) when no Redis store is configured; the poller returns 503 without one.
+- Dedupe is skipped (duplicates accepted) when no Redis store is configured; the poller falls back to a stateless lookback window (POLL_LOOKBACK_SECONDS, default 300, match your cron interval): missed runs lose data and overlaps duplicate it. Add Redis for cursors.
 - Whether notification-type message logs appear under `entityType`; poller currently pulls all entity types.

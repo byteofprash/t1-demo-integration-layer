@@ -15,7 +15,7 @@ export async function mgmtGet<T>(path: string, params: Record<string, string | n
   for (let attempt = 0; attempt < 3; attempt++) {
     await throttle();
     const res = await fetch(url, {
-      headers: { Authorization: `ManagementKey-v1 ${process.env.TALON_MANAGEMENT_API ?? env("TALON_MANAGEMENT_KEY")}` },
+      headers: { Authorization: `ManagementKey-v1 ${env("TALON_MANAGEMENT_KEY")}` },
       signal: AbortSignal.timeout(20_000),
     });
     if (res.status === 429) {

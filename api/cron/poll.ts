@@ -6,6 +6,7 @@ import { mgmtGet } from "../../lib/talon.js";
 import { flatten } from "../../lib/transform.js";
 
 const PAGE = 1000;
+const MSG_PAGE = 50; // /v1/message_logs default; max not confirmed in docs
 const MAX_PAGES = 5; // per source per run, bounds duration and rate-limit use
 const LAG_MS = 30_000; // don't read the very latest window; entries may still be landing
 
@@ -15,6 +16,8 @@ interface Source {
   fetchPage(from: string, to: string, skip: number): Promise<Row[]>;
   ts(row: Row): string | undefined;
   message(row: Row): string;
+  pageSize?: number; // rows per page (default PAGE)
+  maxPages?: number; // pages per run (default MAX_PAGES)
 }
 
 // ASSUMPTION: row timestamp field names below are unconfirmed in the OpenAPI excerpts I could
@@ -32,17 +35,18 @@ function sources(): Source[] {
       ts: (r) => firstTs(r, ["created"]),
       message: (r) => `audit change ${r.entityPath ?? ""}`,
     },
-    {
-      name: "message_logs",
-      fetchPage: async (from, to, skip) => {
-        // Uses cursor pagination in the API; we window by createdAfter/Before and walk the cursor.
-        // `skip` is encoded as a cursor chain by the caller via the closure below.
-        return pageMessageLogs(from, to, skip);
-      },
-      ts: (r) => firstTs(r, ["request.createdAt"]),
-      message: (r) => `${r.service ?? "message"} ${r.webhookName ?? r.notificationName ?? ""}`,
-    },
   ];
+  // entityType is required by /v1/message_logs; webhook/notification logs live under these three types.
+  for (const entityType of ["webhook", "application", "loyalty_program"]) {
+    list.push({
+      name: `message_logs:${entityType}`,
+      pageSize: MSG_PAGE,
+      maxPages: 40,
+      fetchPage: (from, to, skip) => pageMessageLogs(entityType, from, to, skip),
+      ts: (r) => firstTs(r, ["createdAt", "request.createdAt"]),
+      message: (r) => `${r.entityType ?? entityType} ${r.webhookName ?? r.notificationName ?? r.url ?? ""} ${r.response?.status ?? ""}`,
+    });
+  }
   for (const id of appIds()) {
     list.push({
       name: `access:${id}`,
@@ -58,12 +62,12 @@ function sources(): Source[] {
 }
 
 const msgCursors = new Map<string, string | undefined>();
-async function pageMessageLogs(from: string, to: string, skip: number): Promise<Row[]> {
-  const key = `${from}|${to}`;
+async function pageMessageLogs(entityType: string, from: string, to: string, skip: number): Promise<Row[]> {
+  const key = `${entityType}|${from}|${to}`;
   const cursor = skip === 0 ? undefined : msgCursors.get(key);
   if (skip !== 0 && !cursor) return [];
   const res = await mgmtGet<{ data: Row[]; nextCursor?: string }>("/v1/message_logs", {
-    createdAfter: from, createdBefore: to, pageSize: PAGE, cursor,
+    entityType, createdAfter: from, createdBefore: to, pageSize: MSG_PAGE, cursor,
   });
   msgCursors.set(key, res.nextCursor);
   return res.data;
@@ -82,7 +86,9 @@ async function pollSource(s: Source, now: Date) {
   let sent = 0;
   let newest = from;
   let truncated = false;
-  for (let page = 0; page < MAX_PAGES; page++) {
+  const size = s.pageSize ?? PAGE;
+  const maxPages = s.maxPages ?? MAX_PAGES;
+  for (let page = 0; page < maxPages; page++) {
     const rows = await s.fetchPage(from, to, skip);
     if (!rows.length) break;
     const logs: NrLog[] = rows.map((r) => {
@@ -93,8 +99,8 @@ async function pollSource(s: Source, now: Date) {
     await sendLogs(logs, { "talon.source": s.name });
     sent += rows.length;
     skip += rows.length;
-    if (rows.length < PAGE) break;
-    if (page === MAX_PAGES - 1) truncated = true;
+    if (rows.length < size) break;
+    if (page === maxPages - 1) truncated = true;
   }
   // If we hit the page cap, resume from the newest row seen (at-least-once; a boundary row may repeat).
   // Otherwise the whole window was consumed.

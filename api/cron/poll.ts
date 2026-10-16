@@ -47,9 +47,11 @@ function sources(): Source[] {
     list.push({
       name: `access:${id}`,
       fetchPage: async (from, to, skip) =>
-        (await mgmtGet<{ data: Row[] }>(`/v1/applications/${id}/access_logs/no_total`, { rangeStart: from, rangeEnd: to, pageSize: PAGE, skip, sort: "created" })).data,
-      ts: (r) => firstTs(r, ["created", "timestamp"]),
-      message: (r) => `access ${r.method ?? ""} ${r.path ?? ""} ${r.status ?? ""}`,
+        (await mgmtGet<{ data: Row[] }>(`/v1/applications/${id}/access_logs/no_total`, { rangeStart: from, rangeEnd: to, pageSize: PAGE, skip })).data,
+      // AccessLogEntry fields per the OpenAPI spec: uuid, status, method, requestUri, time, requestPayload, responsePayload.
+      // `sort` is omitted: "created" is not a field of this entity and caused a 400.
+      ts: (r) => firstTs(r, ["time"]),
+      message: (r) => `access ${r.method ?? ""} ${r.requestUri ?? ""} ${r.status ?? ""}`,
     });
   }
   return list;

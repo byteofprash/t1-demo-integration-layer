@@ -22,7 +22,10 @@ export async function mgmtGet<T>(path: string, params: Record<string, string | n
       await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
       continue;
     }
-    if (!res.ok) throw new Error(`Talon.One ${path} -> ${res.status}`);
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      throw new Error(`Talon.One ${path} -> ${res.status} ${detail}`);
+    }
     return (await res.json()) as T;
   }
   throw new Error(`Talon.One ${path} rate limited`);

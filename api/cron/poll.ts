@@ -80,7 +80,10 @@ async function pollSource(s: Source, now: Date) {
   const lookbackMs = Number(process.env.POLL_LOOKBACK_SECONDS ?? 900) * 1000;
   const from = (stateful ? await getCursor(s.name) : null) ?? new Date(now.getTime() - LAG_MS - lookbackMs).toISOString();
   log("poll.start", { source: s.name, from, to, stateful });
-  if (from >= to) return { source: s.name, sent: 0 };
+  if (from >= to) {
+    log("poll.skipped", { source: s.name, from, to, reason: "empty_window" });
+    return { source: s.name, sent: 0 };
+  }
 
   let skip = 0;
   let sent = 0;
@@ -90,13 +93,17 @@ async function pollSource(s: Source, now: Date) {
   const maxPages = s.maxPages ?? MAX_PAGES;
   for (let page = 0; page < maxPages; page++) {
     const rows = await s.fetchPage(from, to, skip);
+    log("poll.page", { source: s.name, page, skip, rows: rows.length, pageSize: size });
     if (!rows.length) break;
     const logs: NrLog[] = rows.map((r) => {
       const t = s.ts(r);
       if (t && t > newest) newest = t;
       return { message: s.message(r), timestamp: t ? Date.parse(t) : undefined, attributes: { logSource: s.name, ...flatten(r) } };
     });
+    const withTs = logs.filter((l) => l.timestamp !== undefined).length;
+    if (withTs < logs.length) log("poll.missing_timestamps", { source: s.name, missing: logs.length - withTs, sampleKeys: Object.keys(rows[0]).slice(0, 15) });
     await sendLogs(logs, { "talon.source": s.name });
+    log("poll.sent", { source: s.name, page, logs: logs.length, newest });
     sent += rows.length;
     skip += rows.length;
     if (rows.length < size) break;
@@ -105,6 +112,7 @@ async function pollSource(s: Source, now: Date) {
   // If we hit the page cap, resume from the newest row seen (at-least-once; a boundary row may repeat).
   // Otherwise the whole window was consumed.
   if (stateful) await setCursor(s.name, truncated ? newest : to);
+  log("poll.cursor", { source: s.name, stateful, next: stateful ? (truncated ? newest : to) : null });
   log("poll.done", { source: s.name, sent, truncated });
   return { source: s.name, sent, truncated };
 }
@@ -117,14 +125,18 @@ export async function GET(request: Request): Promise<Response> {
     return new Response("Unauthorized", { status: 401 });
   }
   const now = new Date();
+  const srcs = sources();
+  log("poll.run_start", { sources: srcs.map((x) => x.name), appIds: appIds(), stateful: storeConfigured(), lookbackSeconds: Number(process.env.POLL_LOOKBACK_SECONDS ?? 900), hasManagementKey: Boolean(process.env.TALON_MANAGEMENT_KEY), baseUrl: process.env.TALON_BASE_URL ?? null });
   const results: unknown[] = [];
-  for (const s of sources()) {
+  for (const s of srcs) {
     try {
       results.push(await pollSource(s, now)); // sequential keeps us under 3 req/s
     } catch (e) {
       console.error(`[poll] ${s.name} failed:`, e instanceof Error ? e.message : e);
+      log("poll.source_failed", { source: s.name, error: e instanceof Error ? e.message : String(e) });
       results.push({ source: s.name, error: true }); // cursor untouched, retried next run
     }
   }
+  log("poll.run_done", { results });
   return Response.json({ results });
 }

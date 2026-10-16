@@ -36,8 +36,8 @@ function sources(): Source[] {
       message: (r) => `audit change ${r.entityPath ?? ""}`,
     },
   ];
-  // entityType is required by /v1/message_logs; webhook/notification logs live under these three types.
-  for (const entityType of ["webhook", "application", "loyalty_program"]) {
+  // entityType is required by /v1/message_logs. Only `application` is polled; `webhook` and `loyalty_program` are intentionally skipped.
+  for (const entityType of ["application"]) {
     list.push({
       name: `message_logs:${entityType}`,
       pageSize: MSG_PAGE,
